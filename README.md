@@ -4,6 +4,7 @@ Nicholas P. Irvin, 1/10/2022
 This program was used to calculate results for the 2022 paper "Feedback between radiation and transport in photovoltaics." This work merges detailed-balance calculations with the      drift-diffusion model. 
 
 
+This was written on python 3.10.
 Most parameters can be specified in the file run.py, which is also where calculations are run.
 Here is the order that files are run:
 run -> input_output_management -> stack_power -> single_cell_power -> recombination -> spectral -> carrier_models/sunlight
