@@ -1,0 +1,43 @@
+***Spectrums***
+Gives energy-resolved sunlight intensity.
+The first column is energies in eV, and second column is wavelength in nm.
+n_per_nm is spectral photocurrent in s^-1*m^-2*nm^-1. n_per_eV is spectral photocurrent in s^-1*m^-2*eV^-1.
+E_per_nm is spectral irradiance in W*m^-2*nm^-1. E_per_eV is spectral irradiance in W*m^-2*eV^-1.
+The prefix 'G' is for global sunlight, which is direct and indirect, so use this for unconcentrated light. The prefix 'D' is for direct sunlight only, so use this for concentrated sunlight or angularly-selective filters.
+The first set of data is ASTM173-03 from 2012. Miller and King use this data set.
+The second set of data, prefixed '2008', is IEC 60904-3-Ed2 global sunlight from 2008. Richter uses this data set.
+The third set of data, prefixed "0", stands for AM0.
+To get efficiencies in stack_power.py, divide output power by Pin where Pin = 1000.37 + 2.53 (W/m^2) for 'G' data, 998 + 2.53 for '2008_G', and 900.14 + 2.53 for 'D'. 2.53 W/m^2 is the power outside of the tabulated data.
+To convert per eV to per nm, go through: dP/dW(m)= dP/dE(J)*E(J)/dW(m).
+
+							
+***Absorption coefficients*** in 1/cm.
+Energies are chosen to match AM1.5G 2012 energies ASTM173-03.	
+Most data sources stop around 1e3 1/cm...						
+Si data from Martin Greene 2008. Fitted Urbach energy is 0.01230397 eV			 				
+GaAs from Palik's "Handbook of Optical Solids" (1985). Fitted Urbach energy is 0.0137179 eV
+	Other GaAs abosorption coefficient sources include:   
+	Adachi's "Optical dispersion relations for GaP, GaAs, etc." (1989),
+	Szes "Physics of Semiconductor Devices", p 41, (1981),
+    	Aspnes's "Dielectric functions and optical parameters of \n  Si, [GaAs], etc. from 1.5 to 6.0 eV" (1983),
+    	Sturge's, “Optical absorption of Gallium Arsenide between 0.6 and 2.75 eV" (1962).			
+CdTe (polycrystalline) from "Modelling the quantum efficiency of cadmium telluride solar cells," M. Hadrich.  Fitted Urbach energy is 0.00651138 eV 
+CdTe (monocrystalline) from Thin-Film Solar Cells: A Unified Analysis of their Potential # alpha extended to 0 by 1.8 eV, nr extended to 2.7 by 2 eV						
+CIS (need to retake) and CIGS (31%) from Paulson 2003 Optical characterization of alloy thin films by spectroscopic ellipsometry. Fitted CIGS Urbach energy is 0.00738294 eV 
+Delete: CIS from	Thin-Film Solar Cells: A Unified Analysis of their Potential						
+Delete: CIGS with 31% Ga from Designing of AlxGa1-xAs/CIGS tandem solar cell by analytical model https://www-sciencedirect-com.ezproxy1.lib.asu.edu/science/article/pii/S0038092X19305560#bb0190
+GaPN from (experiment) S. Shokhovets, O. Supplie, C. Koppka, S. Krischok, and T. Hannappel, “Optical constants and origin of the absorption edge of GaPN lattice-matched to Si,” Phys. Rev. B, vol. 98, no. 7, pp. 1–11, 2018.
+Perovskites Triple Cation from Brenes' "Benefit from Photon Recycling at the Maximum Power Point of State-of-the-Art Perovskite Solar Cells." Fitted Urbach energy is 0.01499763 eV  
+Perovskite MaPI from Perovskite Materials Subjects: General Materials Science by Uk Sim , Youssef JOUANE
+
+
+***Index of refraction*** (unitless).
+Si from Miller 2008
+GaAs from Palik's "Handbook of Optical Solids" (1985).
+CdTe (polycyrstalline?) from Treharne 2011 Optical design and fabrication of fully sputtered CdTe/CdS solar cells
+CIS and CIGS (31% Ga, 69% In) from Paulson 2003 Optical characterization of alloy thin films by spectroscopic ellipsometry
+Delete: CIGS from Optical Properties of Ultrathin CIGS Films Studied by Spectroscopic Ellipsometry assisted by Chemical Engineering
+GaPN from (experiment) S. Shokhovets, O. Supplie, C. Koppka, S. Krischok, and T. Hannappel, “Optical constants and origin of the absorption edge of GaPN lattice-matched to Si,” Phys. Rev. B, vol. 98, no. 7, pp. 1–11, 2018.
+Perovskites Triple Cation from Brenes' "Benefit from Photon Recycling at the Maximum Power Point
+of State-of-the-Art Perovskite Solar Cells"
+Perovskite MaPI copied from triple cation perovskite
