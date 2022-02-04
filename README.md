@@ -5,7 +5,7 @@ This work merges detailed-balance calculations with the      drift-diffusion mod
 
 Most parameters can be specified in the file run.py, which is also where calculations are run.
 Here is the order that files are called:
-run -> input_output_management -> stack_power -> single_cell_power -> recombination -> spectral -> carrier_models/sunlight
+run -> input_output_management -> stack_power -> single_cell_power -> recombination -> spectral -> carrier_models/sunlight. \n
 Many parameters can be turned off but still need a placeholder. For example, if file says MEG = 'No', 
     then max_yield and threshold_energy_normalized will not matter (but they still need to be defined in order to run the next file.)
 
