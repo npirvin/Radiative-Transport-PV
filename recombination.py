@@ -8,6 +8,7 @@ import numpy as np
 import math
 from scipy.integrate import trapz
 import spectral, carrier_models
+import matplotlib.pyplot as plt  # useful for plotting IV curves
 
 
 # Constants
@@ -50,10 +51,12 @@ def Auger(volt, photocollection, stack, P_PR):
         Ca = 5.4e-28  # (cm^6/s)  from "Hybrid Perovskite Films Approaching the Radiative Limit With Over 90% Photoluminescence Quantum Efficiency."        
     if stack.composition[stack.layer_num] == 'GaAs':
         Ca = 7e-30  # (cm^6/s) Amipolar Auger coefficient from Strauss's 1993 “Auger recombination in intrinsic GaAs”
+    if stack.composition[stack.layer_num] == 'generic':
+        Ca = 0
     W = stack.thickness
     carriers = carrier_models.Carriers(volt, stack)
-    if volt >.01:
-        if stack.dn_z[0] != 1:
+    if volt >.0001:
+        if stack.dn_z[0] != stack.dn_z[-1]:
             dn_z = stack.dn_z
             Z = stack.Z
             n = carriers.n - carriers.dn + dn_z
@@ -69,7 +72,7 @@ def Auger(volt, photocollection, stack, P_PR):
     else:
         J_Auger = 0
         tau_Auger = inf
-            
+        
     return J_Auger, tau_Auger # (A/m^2)
 
 
@@ -97,8 +100,8 @@ def Auger_Richter(volt, photocollection, stack, P_PR):
     # U = (U_Auger + (1-P_PR)*(carriers.n*carriers.p - ni_eff**2)*B_low*B_rel(carriers.n, carriers.p, stack.T_cell)
     #     + carriers.dn/stack.trap_lifetime)
     ## and also zero out radiative recombination in  the line "J_radiative = q*flux.flux #  A/m^2"
-    if volt >.01:
-        if stack.dn_z[0] != 1:
+    if volt >.0001:
+        if stack.dn_z[0] != stack.dn_z[-1]:
             dn_z = stack.dn_z
             Z = stack.Z
             n = carriers.n - carriers.dn + dn_z
@@ -122,39 +125,73 @@ def Auger_Richter(volt, photocollection, stack, P_PR):
 
 
 def trap_assisted_recombination(volt, stack):
-    if volt >.01:
+    if volt >.0001:
         carriers = carrier_models.Carriers(volt, stack)
-        if stack.dn_z[0] != 1:
+        if stack.dn_z[0] != stack.dn_z[-1]:
             dn_z = stack.dn_z
             Z = stack.Z
             n = carriers.n - carriers.dn + dn_z
             p = carriers.p - carriers.dn + dn_z
             J_trap = (q*
-                trapz((p*n - carriers.ni_eff**2)/(stack.trap_lifetime*(n + carriers.ni_eff + p + carriers.ni_eff)),Z)*1e4) # (A/m^2) trap-assisted recombination current                        
-             
+                trapz((p*n - carriers.ni_eff**2)/(stack.trap_lifetime*(n + carriers.ni_eff + p + carriers.ni_eff)),Z)*1e4) # (A/m^2) trap-assisted recombination current                         
         else:
             n = carriers.n
             p = carriers.p
             J_trap = (q*stack.thickness*
                 (p*n - carriers.ni_eff**2)/(stack.trap_lifetime*(n + carriers.ni_eff + p + carriers.ni_eff))*1e4) # (A/m^2) trap-assisted recombination current                                    
+            
     else:
         J_trap = 0
     return J_trap
-            
+           
+
+    
+
+def photon_recycling_diffusion(volt, radiative_lifetime, internal_emission, E, PR, P_PR_E, alpha, alpha_total, carriers, stack):
+           if stack.diffusion_limited == 'Yes':
+               def diffusivity_prefactor(z_limit):
+                   # outputs the diffusivity prefactor as a function of the z limit. This is 1/3 in Dumke (1957), but here we limit the limits of the integral from infinity to z limit, which is related to absorber thickness.
+                   # for speed, this was fit to the integral of (z*np.exp(-L)*(L-z)/L), with z from 0 to z_limit, and L from z to infinity
+                   C = 0.357
+                   Q = 1.75
+                   B = 2.735
+                   v = 1.968
+                   def fitted_function(z):
+                       return 1/3*C**(1/v)/(C+Q*z**(-B))**(1/v) # fits well above z_limit = .15
+                   return np.piecewise(z_limit, [z_limit< 0.15, z_limit>= 0.15], [lambda z_limit: 0.5*(z_limit)**2, fitted_function])  # 4.99994*1e-1*(z_limit)**2  fits well below z_limit = 0.35
+
+               diffusivity_Dumke_factor = diffusivity_prefactor(alpha_total*stack.thickness/2)  
+               spontaneous_radiative_lifetime = radiative_lifetime*(1-PR)
+               spectral_diffusivity_Dumke = P_PR_E/spontaneous_radiative_lifetime*diffusivity_Dumke_factor*1/alpha_total**2   *(alpha/alpha_total)  # (cm^2/s)
+               photon_recycling_diffusivity = trapz(spectral_diffusivity_Dumke*internal_emission, E) / trapz(internal_emission, E)  
+               ## can save spectral data to Excel
+               # if volt==stack.V_test:
+               #     import csv            
+               #     file_name = 'spectral_Dpr.csv'
+               #     file = open(file_name, 'a+', newline='')
+               #     import xlsxwriter
+               #     writer = csv.writer(file)
+               #     writer.writerow(E/q)  
+               #     writer.writerow(q*spectral_diffusivity_Dumke*internal_emission / trapz(internal_emission, E))  
+               #     file.close(
+           else:
+               photon_recycling_diffusivity = 0
+           return photon_recycling_diffusivity
+               
 
 
 
 class Recombination:
     def __init__(self, volt, E1, E2, photocollection, stack):
         """ Compile different types of recombination."""
-        
         W = stack.thickness
-        stack.dn_z = np.ones(101)
+        if stack.nonradiative_recombination_modeling == 'Yes' and volt<0.01:  # choose this or below
+            volt = 0.01  # when calcualting lifetimes, a voltage of 0 leads to dividing
         if stack.nonradiative_recombination_modeling == 'Yes' and volt!=0:
             carriers = carrier_models.Carriers(volt, stack)
             photon_recycling = spectral.photon_recycling(carriers, volt, photocollection, stack)
             alpha, alpha_total, PR, P_PR_E, E, internal_emission = photon_recycling.alpha, photon_recycling.alpha_total, stack.P_PR, stack.P_PR_E, photon_recycling.energies, photon_recycling.internal_emission  # average distance traveled of recycled photons
-            
+
         def radiative(self, stack):  # store net radiative recombinations emitted out front and rear
             flux = spectral.Flux(E1, E2, stack.T_cell, volt, photocollection, stack)
             J_radiative = q*flux.flux #  A/m^2
@@ -166,25 +203,23 @@ class Recombination:
             if stack.nonradiative_recombination_modeling == 'Yes' and volt!=0:
                 PR = stack.photon_recycling
                 self.J_FCA = q*W*trapz(PR.internal_emission*PR.P_FCA_E, PR.energies)   
-                # need to interpolate arrays fromstack. eVs to E
-                # self.J_FCA = q*W*trapz((photocollection.EQE/photocollection.absorptance)*PR.internal_emission*PR.P_FCA_E, PR.energies)
                 self.J_radiative += self.J_FCA
     
         radiative(self, stack) 
         J_rec = self.J_radiative
         def find_rad_lifetime():  # (s)            
-            if volt < .01:
+            if volt < .001:
                 self.radiative_lifetime = inf
                 return inf
             else:
-                if stack.dn_z[0]!=1 and stack.anything_variable[0] != 'absorptance':  # first iteration or if using the absorptance model
-                    dn = trapz(stack.dn_z, stack.Z)/W
-                else:
-                    dn = carrier_models.Carriers(volt, stack).dn 
-                tau_rad = inf  if(dn==0) else(q*W*dn/(self.J_radiative)*1e4)
+                if stack.dn_z[0] != stack.dn_z[-1]: # dn as a function of depth  
+                    dn = trapz(stack.dn_z, stack.Z)/W  
+                else:         
+                    dn = carrier_models.Carriers(volt, stack).dn   
+                tau_rad = inf  if(dn==0) else(q*W*dn/(self.J_radiative*1e-4))  # *1e-4 converts W/m^2 to W/cm^2
                 self.radiative_lifetime = tau_rad
-                return tau_rad
-            
+                return tau_rad            
+
         if stack.nonradiative_recombination_modeling == 'No' or volt==0:
             self.carriers = 'N/A'
             if stack.nonradiative_recombination_modeling == 'Yes': 
@@ -203,35 +238,21 @@ class Recombination:
             self.diffusion_length = 1e9
             self.rad_diffusion_length = 1e9
             self.diffusivity = 1e9
+            self.photon_recycling_diffusivity = 0
             self.P_PR = 0
             self.base_resistivity = 0
+            stack.V_drop = 0
         else:
-            self.base_resistivity = carrier_models.base_resistivity(carriers, stack)
             self.carriers = carriers
             self.dn = carriers.dn
             self.P_PR = photon_recycling.P_PR
             radiative_lifetime = find_rad_lifetime()
 
-            # now, photon-recycling diffusivity
-            if stack.diffusion_limited == 'Yes':
-                electrical_diffusivity = carrier_models.find_diffusivity(carriers, stack)
-                def diffusivity_prefactor(z_limit):
-                    # outputs the diffusivity prefactor as a function of the z limit. This is 1/3 in Dumke (1957), but here we limit the limits of the integral from infinity to z limit, which is related to absorber thickness.
-                    # for speed, this was fit to the integral of (z*np.exp(-L)*(L-z)/L), with z from 0 to z_limit, and L from z to infinity
-                    C = 0.357
-                    Q = 1.75
-                    B = 2.735
-                    v = 1.968
-                    def fitted_function(z):
-                        return 1/3*C**(1/v)/(C+Q*z**(-B))**(1/v) # fits well above z_limit = .15
-                    return np.piecewise(z_limit, [z_limit< 0.15, z_limit>= 0.15], [lambda z_limit: 0.5*(z_limit)**2, fitted_function])  # 4.99994*1e-1*(z_limit)**2  fits well below z_limit = 0.35
 
-                diffusivity_Dumke_factor = diffusivity_prefactor(alpha_total*W/2)  
-                spontaneous_radiative_lifetime = radiative_lifetime*(1-PR)
-                spectral_diffusivity_Dumke = P_PR_E/spontaneous_radiative_lifetime*diffusivity_Dumke_factor*1/alpha_total**2   *(alpha/alpha_total)  # (cm^2/s)
-                photon_recycling_diffusivity = trapz(spectral_diffusivity_Dumke*internal_emission, E) / trapz(internal_emission, E)  
-                self.photon_recycling_D = photon_recycling_diffusivity   
-                self.diffusivity = electrical_diffusivity + photon_recycling_diffusivity
+            # find diffusivity
+            electrical_diffusivity = carrier_models.find_diffusivity(carriers, stack)
+            self.photon_recycling_diffusivity = photon_recycling_diffusion(volt, self.radiative_lifetime, internal_emission, E, PR, P_PR_E, alpha, alpha_total, carriers, stack)
+            self.diffusivity = electrical_diffusivity  + self.photon_recycling_diffusivity 
 
             """ Effective lifetime"""
             if stack.lifetimes != []:  # in run.py, option to specific lifetimes, bulk_lifetimes, or trap_lifetimes
@@ -246,8 +267,9 @@ class Recombination:
             else:
                 """ SRV """
                 if stack.SRVs != [] and stack.SRVs != [0]:
-                    # From Dimensionless solution of the equation describing the effect of surface recombination on carrier decay in semiconductors:
-                    SRV_lifetime = W/(stack.SRV) + (2*W/np.pi)**2/self.diffusivity 
+                    if stack.diffusion_limited == 'No':
+                        self.diffusivity = carrier_models.find_diffusivity(carriers, stack)
+                    SRV_lifetime = W/(stack.SRV) + (2*W/np.pi)**2/self.diffusivity                      # From Dimensionless solution of the equation describing the effect of surface recombination on carrier decay in semiconductors:
                     # Assumes S2 = 0, ie one relatvely perfect contact
                     J_SRV = q*stack.thickness*carriers.dn/SRV_lifetime*1e4  # Surface
                     self.J_SRV = J_SRV  # A/m^2
@@ -283,6 +305,7 @@ class Recombination:
                     else:
                         trap_lifetime = stack.trap_lifetime  # used as fixed parameter
                         # from https://ieeexplore-ieee-org.ezproxy1.lib.asu.edu/stamp/stamp.jsp?tp=&arnumber=97400&tag=1
+                        J_trap = trap_assisted_recombination(volt, stack)
                         J_trap = (q*stack.thickness*
                                   (carriers.p*carriers.n - carriers.ni_eff**2)/(trap_lifetime*(carriers.n + carriers.ni_eff + carriers.p + carriers.ni_eff))*1e4) # (A/m^2) trap-assisted recombination current                        
                         J_rec += J_trap
@@ -294,17 +317,17 @@ class Recombination:
                 self.lifetime = 1e9 # effective lifetime
             else: 
   
-                if volt == 0:  # at V=0,  the bulk lifetime becomes calculable, so take an arbitrary value
+                if volt == 0:  # at V=0,  the bulk lifetime becomes incalculable, so take an arbitrary value
                     self.bulk_lifetime  = 1e9
                 else:
                     self.bulk_lifetime = 1/(1/self.radiative_lifetime + 1/self.Auger_lifetime + 1/trap_lifetime)             # 1e-4 converts 1/cm^2 to 1/m^2 
                 self.lifetime = 1/(1/trap_lifetime + 1/self.radiative_lifetime + 1/self.Auger_lifetime + 1/SRV_lifetime)
             if(stack.nonradiative_recombination_modeling == 'Yes') and (stack.diffusion_limited=='Yes') and self.diffusivity<1e8:
+                self.diffusivity = electrical_diffusivity + self.photon_recycling_diffusivity
                 self.diffusion_length = np.sqrt(self.bulk_lifetime*self.diffusivity)  # (cm))
                 self.electrical_diffusion_length = np.sqrt(self.bulk_lifetime*electrical_diffusivity)  # (cm))
                 self.ideal_electrical_diffusion_length = np.sqrt(radiative_lifetime*self.diffusivity)  # (cm))   is the radiative lifetime negative still?
-                self.photon_recycling_L = np.sqrt(photon_recycling_diffusivity*self.bulk_lifetime)                
-                 
+                self.photon_recycling_L = np.sqrt(self.photon_recycling_diffusivity*self.bulk_lifetime)                     
                 if stack.diffusion_limited == 'Yes':
                     stack.put_voltage_dependent_Jgen('On')    # if remotely diffusion limit, then recalcualte parameters with voltage
                 elif stack.dopant_density>1e15:  # if can calculate free-carrier absorption FCA, then recalcualte parameters with voltage 
@@ -319,38 +342,58 @@ class Recombination:
                 self.ideal_electrical_diffusion_length = 1e9
                 self.photon_recycling_D = 1e9
                 self.photon_recycling_L = 1e9
-
         find_effective_lifetime(self, stack)
-        # loop between diffusion length and radiative lifetime to satisfy interdependance
-        if stack.diffusion_limited == 'Yes':
-            for i in range(100):
-                old_radiative_lifetime = radiative_lifetime
+        # loop between diffusion length and radiative lifetime to satisfy interdependance       
+        if stack.diffusion_limited == 'Yes': ####### and stack.anything_variable[0] != 'absorptance' :
+            iteration_limit = 200
+            for i in range(iteration_limit):  # iteratively redo radaitive recombination and carrier diffusion to solve for the interdependance
+                old_diffusion_length = self.diffusion_length
+                old_diffusivity = self.diffusivity
                 photocollection = spectral.Photocollection(E1, stack, volt=volt, diffusion_length=self.diffusion_length, diffusivity=self.diffusivity, absorptance=photocollection.absorptance, rear_emittance=photocollection.rear_emittance, rec=self)    
                 radiative(self, stack)  # need to re add in J_rad
                 radiative_lifetime = find_rad_lifetime()
-                                
-                # redo Auger
-                auger = Auger(volt, photocollection, stack, P_PR=self.P_PR)
+                auger = Auger(volt, photocollection, stack, P_PR=self.P_PR)  # redo Auger with new carrier concentration
                 self.Auger_lifetime = auger[1]
                 self.J_Auger = auger[0]  # A/m^2   
  
-                # redo trap-assited recombination (SRH)
-                self.J_trap = trap_assisted_recombination(volt, stack)
+                self.J_trap = trap_assisted_recombination(volt, stack)  # redo trap-assited recombination (SRH)
+
                 
+                if volt > .001:
+                    self.photon_recycling_diffusivity = photon_recycling_diffusion(volt, self.radiative_lifetime, internal_emission, E, PR, P_PR_E, alpha, alpha_total, carriers, stack)  # redo photon recycling diffusion, important for high-level injection where radaitive lifetime depends on injection
                 find_effective_lifetime(self, stack)  # recalculate L
-                # On recalculation, Si and GaAs typically converges within one loop, CdTe takes 15 loops sometimes.
-                if math.isclose(old_radiative_lifetime, radiative_lifetime, rel_tol=1e-4):
+                # On recalculation, highly doped material converge in one loop. Lowly doped materials with low mobility can be slow to converge.
+                if (math.isclose(self.diffusion_length, old_diffusion_length, rel_tol=1e-4) 
+                   and math.isclose(self.diffusivity, old_diffusivity, rel_tol=1e-4)):
                     break
-        # J_rec = self.J_radiative + J_nonrad
+                if i == iteration_limit-1:
+                    print('The iterative loop in L did not converge within '+ str(iteration_limit) + ' steps for volt ' + str(round(volt,4)) + '. '
+                            + 'Difference between previous and current diffusion_length was ' + str(round(100*(old_diffusion_length-self.diffusion_length)/self.diffusion_length, 4)) + '%.')
+                # when convergence is slow can use the average of old and new diffusion length to speed up convergence
+                intermediate_diffusion_length = self.diffusion_length 
+                intermediate_diffusivity = self.diffusivity
+                if i>5:
+                    self.diffusion_length = (intermediate_diffusion_length + old_diffusion_length)/2
+                    self.diffusivity = (intermediate_diffusivity + old_diffusivity)/2
+
+
         J_rec = self.J_radiative  + self.J_Auger + self.J_trap + self.J_SRV
         if stack.nonradiative_recombination_modeling == 'No':
-            J_rec = self.J_radiative/stack.fc_rec_ratio  # simple nonradiative recombination factor fc_rec_ratio is the ratio of net radiative recombination to net recombination
-        
+            J_rec = self.J_radiative/stack.fc_rec_ratio   # simple nonradiative recombination factor fc_rec_ratio is the ratio of net radiative recombination to net recombination
+
+        if stack.nonradiative_recombination_modeling == 'Yes' and volt>0:          # analyze change in quasi fermi level splitting
+            if stack.dopant_type  == 'n':
+                n_maj = carriers.n0+stack.dn_z
+            if stack.dopant_type  == 'p':
+                n_maj = carriers.p0+stack.dn_z        
+            V_drop = k*stack.T_cell/q*np.log((n_maj[0])/(n_maj[-1]))  # loss in voltage due to loss in majority carrier fermi level
+            stack.V_drop = V_drop
+
         self.J_recombination = J_rec 
-        self.ERE = self.J_rad_front/J_rec # External Radiative Efficiency
+        self.ERE = self.J_rad_front/J_rec  # External Radiative Efficiency
         self.trap_lifetime = trap_lifetime
         self.SRV_lifetime = SRV_lifetime
         self.radiative_lifetime = radiative_lifetime
         stack.rec = self 
-        stack.photocollection = photocollection        
+        stack.photocollection = photocollection     
 
