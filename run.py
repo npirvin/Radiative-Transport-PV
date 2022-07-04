@@ -38,26 +38,24 @@ io_management.create_file(file_name, sampling_range)
         
 
 # Declare for loop so one can repeat calculations while varying parameters like doping concentrations, trap assisted lifetimes, or rear reflectance
-Nd_list = np.logspace(14,20,7)  # to range doping concentrations from 10^14 to 10^20 cm^-3
+Nd_list = [1e16] #, 1e17, 1e18]  # to range doping concentrations from 10^14 to 10^20 cm^-3
 for Nd in Nd_list:
-    thicknesses = [3] # (list) Absorber thickness in microns. Provide as [1] or as [100] or as [1, 100] for tandems. common thicknesses are Si 300, perovskite 0.7, CdTe 3, GaAs 3
-    texturing = 'No'  # 'Yes' or 'No'
+    thicknesses = [3] 
+    texturing = 'No'  # 'No' for planar or  'Yes' for ideal texturing, i.e. Lambertian Light Distribution 
    
                
     front_reflectance = 0  # between 0 and 1, probably should use 0   # External front reflectance. Reduce with antireflection coating. # can be front reflection and parasitic absorption together 
-    rear_reflectance = 0  # between 0 and 1, most studies use 1 (ideal)   # proportion of photons that reflect at the rear surface
+    rear_reflectance = 1  # between 0 and 1, most studies use 1 (ideal)   # proportion of photons that reflect at the rear surface
       
     dopant_type = 'n'  # 'n' or 'p'
     dopant_density = Nd # (cm^-3) default with 'undoped' at 1e10, but here we are setting the doping as the sweeping variable
 
-    V_test = 'Voc' # Voltage at which values like radiative _lifetime may be calculated. Can be a number or the strings 'Vmp' or 'Voc'  (with the quote marks)
+    V_test = 'Vmp' # Voltage at which values like radiative _lifetime may be calculated. Can be a number or the strings 'Vmp' or 'Voc'  (with the quote marks)
+    find_Voc = 'Yes'  # Put as 'No' to skip finding Voc and FF and to save time
 
-
-    trap_lifetimes = [] # (list) (units of seconds) Bulk minority trap-assisted lifetime, e.g., Shockley-Reed-Hall (SRH) lifetime. 
-        # [] designates infinite (ideal) trap-assisted lifetime. [1e-9] would desinate a 1 ns trap-assisted lifetime. For multijunctions, [1e-9, 1e-6] would be designate first cell as 1 ns and second cell as 1 ms.
     SRVs = []  # (list) (cm/s) Surface recombination velocities (SRV) of rear surface, with front surface assumed ideal (0)
-    
-    
+    trap_lifetimes = [] # (list) (units of seconds) Bulk minority trap-assisted lifetime, e.g., Shockley-Reed-Hall (SRH) lifetime. 
+        # [] designates infinite (ideal) trap-assisted lifetime. [1e-9] would desinate a 1 ns trap-assisted lifetime. For multijunctions, [1e-9, 1e-6] would be designate first cell as 1 ns and second cell as 1 ms.   
     
     """ Can usually ignore everything below here. """
     lifetimes = [] # (list) (s)  Minority carrier lifetime i.e. effective lifetime (s)
@@ -65,7 +63,7 @@ for Nd in Nd_list:
     bulk_lifetimes = [] # (list) (s) Bulk minority carrier lifetime
         # To bypass, give lifetimes as [] (default). # Good GaAs bulk_lifetime is 100 ns, great is 2,000 ns.  # If bulk lifetimes given as a number, then trap_lifetimes, radiative, Auger, trap-assisted lifetimes won't be used or calculated.            
 
-    anything_variable = 'optional'  # Define any variable to be used in subprograms! Call on it with stack.anything_variable.
+    anything_variable = 'N/A'  # Define any variable to be used in subprograms! Call on it with stack.anything_variable.
         # this was used in paper to control the mobility in carrier_models.py and also to switch from the EQE to the absorptance model in spectral.py recombination.py 
     
     diffusion_limited = 'Yes'  # 'Yes' or 'No'  # if 'Yes' then current is calculated with nonideal collection efficiency in spectral.py.      # if 'No' then standard detailed-balance procedure is used, ie  J = Jph - Jrec. 
@@ -102,7 +100,7 @@ for Nd in Nd_list:
     """ Initiate calculations"""
     optimal_efficiency, IV_data = io_management.manage_input_output(
             file_name, T_cell, T_sun, spectrum, concentration, 
-            structure, composition, V_test, fc_rec_ratio, nonradiative_recombination_modeling, diffusion_limited, lifetimes, 
+            structure, composition, V_test, find_Voc, fc_rec_ratio, nonradiative_recombination_modeling, diffusion_limited, lifetimes, 
             bulk_lifetimes, trap_lifetimes, SRVs, thicknesses, dopant_type, 
             dopant_density, texturing, front_reflectance, rear_reflectance, acceptance_angle, 
             MEG, max_yield, threshold_energy_normalized, sampling_range, bandgap_resolution, anything_variable)
