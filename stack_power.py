@@ -16,7 +16,8 @@ def save_results(optimal_efficiency, optimal_IV, optimal_bandgaps, eff_all, IV_d
     """Store results to file_data and see if the new efficiency beats the previous optimum.
     Used by optimize_stack."""
     
-    thickness = 1e9 if(stack.thickness == 'N/A') else stack.thickness
+    thickness = 'N/A' if(stack.thickness == 'N/A') else stack.thickness*1e4  # cm to um
+    T_sun = stack.T_sun if stack.spectrum == 'Blackbody' else 'N/A'
 
     # Save results
     if stack.number_of_bandgaps != 1:
@@ -32,12 +33,12 @@ def save_results(optimal_efficiency, optimal_IV, optimal_bandgaps, eff_all, IV_d
         + [stack.V_test] + [IV_data.Jph_test/10] + ["{:.2e}".format(rec.dn)] + [rec.J_Auger/10] 
         + [rec.J_rad_front/10] + [rec.J_rad_back/10] + [rec.J_FCA/10] + [rec.J_trap/10] + [rec.J_SRV/10]
         + [rec.ERE] + [IV_data.PR] + [IV_data.Vdb]  
-        + [stack.T_cell] + [stack.T_sun] + [stack.spectrum] + [stack.concentration]
+        + [stack.T_cell] + [T_sun] + [stack.spectrum] + [stack.concentration]
         + [stack.structure]  + [stack.acceptance_angle] + [stack.texturing] + [stack.rear_reflectance] 
         + [stack.composition] + [stack.nonradiative_recombination_modeling] + [rec.lifetime]
         + [rec.trap_lifetime] + [rec.radiative_lifetime] + [rec.Auger_lifetime] 
         + [stack.SRV] + [rec.diffusion_length*1e4] + [rec.electrical_diffusion_length*1e4] + [rec.ideal_electrical_diffusion_length*1e4] 
-        + [rec.photon_recycling_D] + [rec.photon_recycling_L*1e4] + [IV_data.J_rad_abs/10] + [thickness*1e4]
+        + [rec.photon_recycling_diffusivity] + [rec.photon_recycling_L*1e4] + [IV_data.J_rad_abs/10] + [thickness]  # thickness converted to microns
         + ["{:.2e}".format(stack.dopant_density)] + [stack.dopant_type] + [stack.anything_variable] + [stack.anything_output])         
     # Update max efficiency and optimal bandgaps
     if (eff_all >= optimal_efficiency): 
@@ -78,7 +79,6 @@ def independent_lookup_table(sampled_bandgaps, stack):
                     skip = 0
             if skip == 0:
                 power_table[i, j], IV_data  =  single_cell_power.max_power_pt(E1, E2, stack)
-            # IV_data not added
 
     return(power_table, IV_data)
 
@@ -156,7 +156,7 @@ def series_stack_power(bandgaps, sampled_bandgaps, stack):
     
     
     
- # for multijunctions, needs reverification  
+ # for multijunctions, needs reverification if used
 def parallel_stack_power(bandgaps, sampled_bandgaps, stack):
     """ Purpose: Calculate total power (W m^-2) for a stack of cell wired in parallel for a
     given set of bandgaps.
@@ -180,7 +180,7 @@ def parallel_stack_power(bandgaps, sampled_bandgaps, stack):
 
 
 
-# for multijunctions, needs reverification 
+# for multijunctions, needs reverification if used
 def combination_stack_power(bandgaps, sampled_bandgaps, stack):
     """N Silicon cells on bottom in parallel with other cells on top."""
 
@@ -249,7 +249,7 @@ def combination_stack_power(bandgaps, sampled_bandgaps, stack):
 
 
  
-# special type of cell, needs reverification 
+# special type of cell, needs reverification if used
 def intermediate_band_power(bandgaps, sampled_bandgaps, stack):    
     """ Purpose: Calculate total power (W m^-2) for a intermediate-band cell. This is
     modeled by a bottom and middle cell in series followed by connection to the 
