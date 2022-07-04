@@ -34,7 +34,7 @@ def find_bandgaps(composition):
     i.e. a list of lists.
     Used by the main run function."""
     # this number isn't actually critical becauses we just use the absorption coefficient data anyway.
-    bandgap_dict = {'GaAs': 1.423, 'Si': 1.125, 'CIGS': 1.115, 'CIS': 1.016, 'CdTe': 1.488, 'CdTe monocrystalline': 1.514, 'GaNP': 1.96, 'perovskite triple cation': 1.59, 'perovskite MaPI': 1.58}  # Double check the GaPN
+    bandgap_dict = {'GaAs': 1.423, 'generic': 1.423, 'Si': 1.125, 'CIGS': 1.115, 'CIS': 1.016, 'CdTe': 1.488, 'CdTe monocrystalline': 1.514, 'GaNP': 1.96, 'perovskite triple cation': 1.59, 'perovskite MaPI': 1.58}  # Double check the GaPN
     # Common bandgaps: Si 1.125 so use sampling_range = [[1.125, 1.125]]. CdTe 1.514, CIS 1.016, CIGS 1.115, https://aip-scitation-org.ezproxy1.lib.asu.edu/doi/pdf/10.1063/1.4767120?class=pdf
     # GaAs 1.423 Temperature dependence of semiconductor band gaps by O'Donnell    
     sampling_range = [[bandgap_dict[comp], bandgap_dict[comp]] for comp in composition]
@@ -52,11 +52,22 @@ def save_material_data(stack):
         nr_list = []
         for comp in stack.composition:         
             df_a = pd.read_csv(r'Tabulated_Parameters\absorption_coefficient.csv')
-            alpha = df_a[comp].values  # and array resolved by energy
+            if comp == 'generic':
+                eVs = stack.eVs_0   # Energies to calculate data at   
+                Eg = 1.423
+                alpha0 = 8000
+                Eo = 6.7e-3
+                Ep = 0.14
+                alpha = np.array([alpha0*np.exp((e-Eg)/Eo) if e<Eg else alpha0*(1 + (e-Eg)/Ep) for e in eVs])
+            else:
+                alpha = df_a[comp].values  # and array resolved by energy
             # alpha = df_a['GaAs_Sturge'].values  # uncomment for Miller (2012)'s absorption coefficient
             alpha_list += [alpha]  # a list of arrays
             df_n = pd.read_csv(r'Tabulated_Parameters\index_of_refraction.csv')
-            nr = df_n[comp].values 
+            if comp == 'generic':
+                nr = 3.6*np.ones(len(eVs))
+            else:
+                nr = df_n[comp].values             
             nr_list += [nr]
             if comp == 'CdTe':
                 df_a = pd.read_csv(r'Tabulated_Parameters\absorption_coefficient.csv')
@@ -69,7 +80,7 @@ def save_material_data(stack):
         
         
 
-def blackbody(volt, E1, E2, stack, n=5*10**3, eVs=[]):  # 5e3
+def blackbody(E1, E2, stack, n=5*10**3, eVs=[]):  # 5e3
     """
     Output a vector of blackbody_photocurrent in (s^-1 m^-2 eV^-1)
     along with the energy vector (E) that it is resolved at. 
@@ -86,9 +97,8 @@ def blackbody(volt, E1, E2, stack, n=5*10**3, eVs=[]):  # 5e3
         E = q*np.linspace(E1 + w/2, E2 - w/2, n)  # Vectorize the energy space.   
     QY = find_QY(E/q, stack.bandgap, stack)  # Quantum yield for MEG calculations
     # blackbody_photocurrent =  (QY*g*E**2  /abs(  np.exp((E-QY*q*volt)/(k*stack.T_cell)) - 1))  # spectral photocurrent (s^-1 m^-2 eV^-1) with Bose-Einstein statistics, leads to singularities so can be bad for integral
-    blackbody_photocurrent =  (QY*g*E**2  *  np.exp(-E/(k*stack.T_cell)) * np.exp((QY*q*volt)/(k*stack.T_cell)) )   # spectral photocurrent (s^-1 m^-2 eV^-1) with Maxwell-Boltzmann approximation
+    blackbody_photocurrent =  QY*g*E**2  *  np.exp(-E/(k*stack.T_cell))   # spectral photocurrent (s^-1 m^-2 eV^-1) to be used with Maxwell-Boltzmann approximation
     return [E, blackbody_photocurrent]
-
 
 
 
@@ -176,12 +186,21 @@ class Absorption:
                 absorptance = ((1-Rf_ext)*alpha/alpha_t*  #  *alpha/alpha_t because FCA isn't radiating
                 (((1-np.exp(-alpha_t*LT))*(1+Rb*np.exp(-alpha_t*LT)))
                 /(1-Rb*Rf_int*np.exp(-2*alpha_t*LT))))                                  
-           
+            else:
+                x = stack.texturing
+                absorptance = ((1-Rf_ext)*alpha/alpha_t*
+                           (1 - np.exp(-x*alpha*W)))   # (cm^-1)  
+                
             # Rear emittance calculation:
             if np.all(Rb==1):  # If reflectance is perfect, no rear emission
                 rear_emittance = np.zeros(len(eVs))
-            else:  # Calculate rear_emittance
-                if stack.texturing == 'No' : # USe a faster version of Eq 12 from Ganapati's 2016 Ultra-Efficient Thermophotovoltaics
+            else:  # Calculate rear_emittance             
+                if stack.texturing == 'Yes':  # From Martin's 2002 paper again
+                    x = 0.935*(alpha_t*W)**0.67
+                    LT = (2+x)/(1+x)*W # Average path length W from front to back
+                    rear_emittance = (1-Rb)*(((1-np.exp(-alpha_t*LT))*(1+Rf_int*np.exp(-alpha_t*LT))) *alpha/alpha_t
+                        /(1-Rb*Rf_int*np.exp(-2*alpha_t*LT)))     
+                else: # USe a faster version of Eq 12 from Ganapati's 2016 Ultra-Efficient Thermophotovoltaics
                     theta_c = np.arcsin(1/nr)  # critical angle
                     bound1 = 2*(1-np.cos(theta_c))*1/np.sin(theta_c)**2
                     bound2 = 2*1/np.cos(theta_c)  
@@ -195,15 +214,7 @@ class Absorption:
                             /(1-Rb*np.exp(-2*alpha_LT_out*W)))
                     rear_emittance = ( 1/nr**2*emittance_in + (1-1/nr**2)*emittance_out )*alpha/alpha_t  #  *alpha/alpha_t because FCA isn't radiating
                     # includes parasitic FCA. If want bifacial rear_QE, multiply by alpha/alpha_t
-
-              
-                if stack.texturing == 'Yes':  # From Martin's 2002 paper again
-                    x = 0.935*(alpha_t*W)**0.67
-                    LT = (2+x)/(1+x)*W # Average path length W from front to back
-                    rear_emittance = (1-Rb)*(((1-np.exp(-alpha_t*LT))*(1+Rf_int*np.exp(-alpha_t*LT))) *alpha/alpha_t
-                        /(1-Rb*Rf_int*np.exp(-2*alpha_t*LT)))                              
-                   
-
+                         
             # ## Can plot absorptance or emittance 
             # if volt == stack.V_test:
             #     fig, ax = plt.subplots()
@@ -254,6 +265,7 @@ class Photocollection:  # gets EQE
         SRV = stack.SRV
         L = diffusion_length
         D = diffusivity 
+        
         # Sometimes don't need the diffusion equation:
         if stack.diffusion_limited == 'No' or L==1e11:
             EQE = absorptance  # collection_efficiency should be 1 so bypass calculation
@@ -262,6 +274,17 @@ class Photocollection:  # gets EQE
             QY = find_QY(eVs, Eg, stack)  # Multi-exciton-generation (MEG). # MEG refers to when Quantum Yield (QY) > 1.
             spectral_flux = EQE*n_per_eV*QY
             J = q*trapz(spectral_flux, eVs)
+            if stack.diffusion_limited == 'No':
+                carriers = 0  # this dummy variables for data that is stored in other cases
+                stack.Z = [0, stack.thickness]
+                stack.dn_z = [1,1]
+            else: 
+                try:
+                    carriers = rec.carriers
+                except:
+                    carriers = carrier_models.Carriers(volt, stack)
+                stack.Z = [0, stack.thickness]
+                stack.dn_z = [carriers.dn,carriers.dn]
 
             
         elif stack.diffusion_limited == 'Yes':  # EQE limited, so calculate EQE
@@ -280,14 +303,9 @@ class Photocollection:  # gets EQE
                 #  Discrepency between my EQE and PC1D EQE only between 1.15 eV (generation flat) and 1.7 eV (generation = alpha not (50 alpha). Which means its the light-trapping or diffusion model different.                    # -> See which one Silvaco matches.
                 gamma = L **2 / (D * (1-alpha_LT**2*L**2 )) 
                 S = SRV 
-                A_dark = carriers.ni_eff**2/n_maj* (np.exp(q*volt/(k*stack.T_cell)) - 1)*normalization_fact *1e4  # 1e4 for 1/cm^2 to 1/m^2                         
                 cosh = np.cosh(W/L) if W/L<100 else 1e43
-                sinh = np.sinh(W/L) if W/L<100 else 1e43
-                B_dark = (-A_dark* (D/L*sinh + S*cosh)
-                      / (D/L*cosh + S*sinh))                    
-                J_dark = q*D*(B_dark/L) 
-                
-                A = (carriers.ni_eff**2/n_maj* (np.exp(q*volt/(k*stack.T_cell)) - 1)*normalization_fact *1e4  # (m^-1 s^-1)  Use 1e4 for 1/cm^2 to 1/m^2                       
+                sinh = np.sinh(W/L) if W/L<100 else 1e43            
+                A = (carriers.dn*normalization_fact *1e4  # (m^-1 s^-1)  Use 1e4 for 1/cm^2 to 1/m^2                       
                      - gamma* (a_minus + a_minus*Rb*np.exp(-2*alpha_LT*W)  ))  
                 B = (( -A* (D/L*sinh + S*cosh)  # B also units of m^-1 s^-1
                       -gamma*(a_minus*np.exp(-alpha_LT*W)*(S - alpha_LT*D) 
@@ -296,20 +314,74 @@ class Photocollection:  # gets EQE
                      / (D/L*cosh + S*sinh))                    
                 J = q*D*(B/L + gamma*(-alpha_LT*a_minus 
                                         + alpha_LT*a_minus*Rb*np.exp(-2*alpha_LT*W)))  # ()     # limit as L-> inf, dn->0 is q*absortpance*(1-S/alpha/D)?
-                EQE = (J-J_dark)/(q*n_per_eV+1e-32)
+                
+                # to find Q, find photocurrent with a little less light
+                A_less_light = (carriers.dn*normalization_fact *1e4  # (m^-1 s^-1)  Use 1e4 for 1/cm^2 to 1/m^2                       
+                      - gamma* (a_minus*.9999 + a_minus*.9999*Rb*np.exp(-2*alpha_LT*W)  ))  
+                B_less_light = (( -A_less_light* (D/L*sinh + S*cosh)  # B also units of m^-1 s^-1
+                      -gamma*(a_minus*.9999*np.exp(-alpha_LT*W)*(S - alpha_LT*D) 
+                              + a_minus*.9999*Rb*np.exp(-alpha_LT*W)  # a_plus = a_minus*Rb*np.exp(-2 alpha_LT*W)
+                              *(S+alpha_LT*D)))
+                      / (D/L*cosh + S*sinh))                    
+                J_less_light = q*D*(B_less_light/L + gamma*(-alpha_LT*a_minus*.9999 
+                                        + alpha_LT*a_minus*.9999*Rb*np.exp(-2*alpha_LT*W)))  # ()     # limit as L-> inf, dn->0 is q*absortpance*(1-S/alpha/D)?
+                EQE = (J-J_less_light)/(q*n_per_eV*(1-.9999)+1e-32)
+                
                 J = np.trapz(J, eVs)  
-                Z = np.linspace(0, W, 101) 
+                Z = np.linspace(0, W, 201) 
                 stack.Z = Z
-                if volt == 0:
-                    stack.dn_z = np.ones(len(Z))
-                else:
-                    cosh_z = [np.cosh(z/L) if z/L<20 else 1e10 for z in Z]
-                    sinh_z = [np.sinh(z/L) if z/L<20 else 1e10 for z in Z] # 1e43
-                    dn_z = trapz([(A*cosh_z[i] + B*sinh_z[i]
-                      + gamma*(a_minus*np.exp(-alpha_LT*z)
-                              + a_minus*Rb*np.exp(-alpha_LT*(2*W-z))))*1e-4  # (1/cm^3)
+                if volt > 0:
+                    cosh_z = [np.cosh(z/L) if z/L<100 else 1e43 for z in Z] #[np.cosh(z/L) if z/L<100 else 1e40 for z in Z]  #                     cosh_z = [np.cosh(z/L) if z/L<20 else 1e10 for z in Z]
+                    sinh_z = [np.sinh(z/L) if z/L<100 else 1e43 for z in Z] # 1e43  
+                    A_cosh = trapz([A*cosh_z[i]
                             for i, z in enumerate(Z)], eVs)
+                    B_sinh = trapz([B*sinh_z[i]
+                            for i, z in enumerate(Z)], eVs)
+                    gamma_z = trapz([gamma*(a_minus*np.exp(-alpha_LT*z)
+                            + a_minus*Rb*np.exp(-alpha_LT*(2*W-z)))
+                            for i, z in enumerate(Z)], eVs)
+                    dn_z = np.array([A_cosh[i] + B_sinh[i] + gamma_z[i]  if (A_cosh[i]+B_sinh[i])/A_cosh[i]>1e-14 else gamma_z[i]  # 1e-14 is checking if addition is going below machine precision
+                            for i, z in enumerate(Z)])*1e-4  # (1/cm^3)                    
+                    dn_z = np.array(dn_z)
+                    dn_z = np.maximum(dn_z, 0)
                     stack.dn_z = np.abs(dn_z) 
+                        
+                    # # for carrier concentration curves
+                    # A_dark = carriers.ni_eff**2/n_maj* (np.exp(q*volt/(k*stack.T_cell)) - 1)*normalization_fact *1e4  # 1e4 for 1/cm^2 to 1/m^2                         
+                    # B_dark = (-A_dark* (D/L*sinh + S*cosh)   # more z-dependent
+                    #       / (D/L*cosh + S*sinh))                    
+                    # A_dark_cosh = trapz([A_dark*cosh_z[i]
+                    #         for i, z in enumerate(Z)], eVs)
+                    # B_dark_cosh = trapz([B_dark*sinh_z[i]
+                    #         for i, z in enumerate(Z)], eVs)
+                    # dn_z_dark = np.array([A_dark_cosh[i] + B_dark_cosh[i]  if (A_dark_cosh[i]+B_dark_cosh[i])/A_dark_cosh[i]>1e-14 else 0
+                    #         for i, z in enumerate(Z)])*1e-4  # (1/cm^3)
+                    # dn_z_dark_avg = trapz(dn_z_dark, Z)/W
+                    # stack.dn_ratio = dn_z_dark_avg/dn_z_dark[0]  #carriers.dn
+                    # if volt == stack.V_test and not(plt.fignum_exists(4)):  # Already made a plot  
+                    #     plt.rc('font', family='arial', size = '16')
+                    #     fig, ax = plt.subplots()
+                    #     ax.tick_params(which='both', direction='in', right='True', top='true')
+                    #     ax.minorticks_on()
+                    #     plt.xlim(0,1)#W*1e4)
+                    #     # plt.ylim(4e12,4e14)
+                    #     # plt.title(r'n-Si at $V_{\rm mp}$')
+                    #     plt.xlabel('Normalized depth  z/W')
+                    #     plt.ylabel('Excess carrier concentration  dn (cm$^{-3}$)')
+                    #     plt.yscale('log')
+                    #     plt.plot(Z/W, carriers.dn*np.ones(len(Z)), color='red', linestyle='--', label='volt model, i.e.,\ncarrier concentration at junction')
+                    #     plt.plot(Z/W, dn_z, color='orange', label='QFLS model, i.e.,\nactual carrier profile')
+                    #     plt.plot(Z/W, dn_z_dark, color='grey', label='EL model, i.e.,\ncarrier profile in dark')
+                    #     if volt>0.5:
+                    #         plt.title(r'n-GaAs at $V_{\rm mp}$')            
+                    #         plt.legend()
+                    #         # plt.savefig("dn_Z Voc.png", dpi=800, bbox_inches="tight") 
+                    #         # plt.savefig("dn_Z Voc.svg", dpi=800, bbox_inches="tight") 
+                    #     else:
+                    #         plt.title(r'n-Si at $V_{\rm mp}$')            
+                    #         plt.legend(fontsize=13.9)
+                    # #         plt.savefig("dn_Z Vmp.png", dpi=800, bbox_inches="tight") 
+                    # #         plt.savefig("dn_Z Vmp.svg", dpi=800, bbox_inches="tight") 
     
                 return J, EQE 
             
@@ -326,87 +398,34 @@ class Photocollection:  # gets EQE
                            / (1 - Rb*Rf_int*np.exp(-2*alpha_LT*W)))   # (cm^-1) 
             J, EQE = get_EQE(L, tau, SRV)
             
-            """ rear_QE for radiative recombination out the rear"""
-            # Substituded 0 for Ze and Wb, and W for ZB for Eq. A3-A5 in "Silicon solar cells reaching the efficiency limits: from simple to complex modelling
-            if np.all(Rb==1):  # If reflectance isn't perfect, calculate radiative emission loss to backmirror
-                rear_QE = np.zeros(len(eVs))
-            else:
-
-                def get_rear_QE(L, tau, SRV, alpha_LT, a_minus, Rf):  
-                    rear_normalization_fact = n_per_eV*rear_emittance/np.trapz(n_per_eV*rear_emittance, eVs)  # Normalization used to split up injection over energy spectrum evenly
-                    gamma = L **2 / (D * (1-alpha_LT**2*L**2 ))                                            
-                    # Hovel model extended beyond single pass to double pass and Lambertian generation function
-                    # Ze = W, We = 0 = Z for Eq. A9-A11 in "Silicon solar cells reaching the efficiency limits: from simple to complex modelling
-                    # We use the emitter equations for the rear_QE of the base as it effectively flips the sunlight source to the other side.                              
-                    A_dark = carriers.ni_eff**2/n_maj* (np.exp(q*volt/(k*stack.T_cell)) - 1)*rear_normalization_fact*1e4  # normalization to go to units of per_eV, *1e4 to go from 1/cm^2 to 1/m^2
-                    cosh = np.cosh(W/L) if W/L<100 else 1e43
-                    sinh = np.sinh(W/L) if W/L<100 else 1e43
-                    B_dark = ((-A_dark* (D/L*sinh + SRV*cosh))  
-                          / (D/L*cosh + SRV*sinh))
-                    J_dark = -q*D*( -B_dark/L)             
-
-                    A = (carriers.ni_eff**2/n_maj* (np.exp(q*volt/(k*stack.T_cell)) - 1)*rear_normalization_fact*1e4  # normalization to go to units of per_eV, *1e4 to go from 1/cm^2 to 1/m^2
-                        - gamma*(a_minus*np.exp(-alpha_LT*W) + 
-                                  a_minus*Rf*np.exp(-alpha_LT*W)))  # a_plus = a_minus*Rf*np.exp(-2 alpha_LT*W)
-                    B = (( -A* (D/L*sinh + SRV*cosh)  
-                          -gamma*( a_minus*(SRV + alpha_LT*D) 
-                                  + a_minus*Rf*np.exp(-2*alpha_LT*W)*(SRV - alpha_LT*D)))
-                          / (D/L*cosh + SRV*sinh))
-                    J = -q*D*( -B/L + gamma*( -alpha_LT*a_minus*np.exp(-alpha_LT*W) 
-                        + alpha_LT*a_minus*Rf*np.exp(-alpha_LT*W) ))  # An array, will integrate
-                    rearQE = (J-J_dark)/(q*n_per_eV+1e-32)
-                    return rearQE
-
-                if stack.texturing == 'No': 
-                    theta_c = np.arcsin(1/nr)  # critical angle
-                    bound1 = 2*(1-np.cos(theta_c))*1/np.sin(theta_c)**2
-                    """ still work if simlpify bound2??"""
-                    bound2 = 2*1/np.cos(theta_c)     
-                    x = 1.88*(alpha*W)**0.59 
-                    alpha_LT_in = (bound1+x)/(1+x)*alpha_t  # alpha* average path length factor for photons in escape cone
-                    alpha_LT_out = 1/np.cos(theta_c)*(np.cos(theta_c)*bound2+x)/(1+x)*alpha_t  # alpha scaled by average path length factor for photons out of escape cone
-                    # Hypothetical flux from rear substrate 
-                    a_minus_in = (((1-Rb)*alpha_LT_in)*alpha/alpha_t*n_per_eV #  alpha/alpha_t because FCA isn't radiating
-                                    / (1 - Rb*Rf_ext*np.exp(-2*alpha_LT_in*W)))
-                    a_minus_out = (((1-Rb)*alpha_LT_out)*alpha/alpha_t*n_per_eV
-                                    / (1 - Rb*np.exp(-2*alpha_LT_out*W)))
-
-                    rear_QE = ((1/nr**2)*get_rear_QE(L, D, SRV, alpha_LT_in, a_minus_in, Rf_ext)  # 1/nr**2 weights by number of photons in escape cone
-                           + (1-1/nr**2)*get_rear_QE(L, D, SRV, alpha_LT_out, a_minus_out, 1))  # weight by number out of escape cone
-                elif stack.texturing == 'Yes':
-                    x = 0.935*(alpha*W)**0.67
-                    alpha_LT =  (2+x)/(1+x)*alpha_t # Averaged path length factor                                     
-                    a_minus = ((1-Rb)*alpha_LT*alpha/alpha_t*n_per_eV
-                               / (1 - Rb*Rf_int*np.exp(-2*alpha_LT*W)))   # (cm^-1)  
-                    rear_QE = get_rear_QE(L, tau, SRV, alpha_LT, a_minus, Rf_int)
-
-                    
             # # can save EQE data to Excel
-            # import csv            
-            # file_name = 'export.csv'
-            # file = open(file_name, 'w+', newline='')
-            # # import xlsxwriter
-            # # writer = csv.writer(file)
-            # # writer.writerow(eVs) 
-            # # writer.writerow(EQE)   
-            # # file.close()
-
-            # ## Can plot EQE
+            # if volt == stack.V_test:
+            #     import csv            
+            #     file_name = 'EQE.csv'
+            #     file = open(file_name, 'a+', newline='')
+            #     import xlsxwriter
+            #     writer = csv.writer(file)
+            #     # writer.writerow(eVs) 
+            #     writer.writerow(EQE)   
+            #     file.close()
+            # wavelength = h*c/(eVs*q)*1e9
+            # # ## Can plot EQE
             # if volt == stack.V_test:
             #     fig, ax = plt.subplots()
+            #     plt.xlim(500, 900)
             #     plt.title(stack.texturing)
-            #     plt.xlabel('Energies (eVs)')
+            #     plt.xlabel('Wavelengths (nm)')
             #     plt.ylabel('EQE (%)')
             #     ax.tick_params(which='both', direction='in', right='True', top='true')
-            #     plt.plot(eVs, 100*EQE, label='abs')
-            #     plt.legend(fontsize='small')   
+            #     plt.plot(wavelength, 100*EQE)#, label='abs')
+            #     # plt.legend(fontsize='small')   
 
                 
         self.absorptance = absorptance
         self.EQE = EQE
         self.J = J
+        self.carriers = carriers
         self.rear_emittance = rear_emittance
-        self.rear_QE = rear_QE
         self.nr = nr
         self.alpha = alpha
         self.alpha_FCA = alpha_FCA
@@ -485,30 +504,38 @@ class Flux:
 
         Outputs flux in 1/(s m^2)"""
         
-        EQE, rear_QE, nr = photocollection.EQE, photocollection.rear_QE, photocollection.nr   
-        eVs_original = stack.eVs
-        if model == 'absorptance' or stack.anything_variable[0]=='absorptance':  # if applying the absoprtance model for radiative recombination
-            EQE = photocollection.absorptance
-            rear_QE = photocollection.rear_emittance  
+        absorptance, rear_emittance, nr, carriers = photocollection.absorptance, photocollection.rear_emittance, photocollection.nr,  photocollection.carriers  
+        eVs_original = stack.eVs 
+        
+        [E, blackbody_photocurrent] = blackbody(E1, E2, stack)   # E is in J whereas eVs is in J. Also, the array E is made with finer resolution than eVs, which is given as the AM1.5G resolution.
+        if  stack.diffusion_limited=='No' or model == 'absorptance' or stack.anything_variable[0] == 'absorptance' or stack.dn_z[0] == stack.dn_z[-1]:
+            np_scaling = (np.exp((q*volt)/(k*stack.T_cell)))
+        else:
+            n = carriers.n0 + stack.dn_z
+            p = carriers.p0 + stack.dn_z
+            np_scaling = trapz(n*p/(carriers.ni_eff**2), stack.Z)/stack.thickness   # average over the quasi-fermi level splitting
+        if note=='Calculating Jo':
+            scaled_blackbody_photocurrent = np_scaling*blackbody_photocurrent
+        else: 
+            scaled_blackbody_photocurrent = (np_scaling-1)*blackbody_photocurrent
         
         # radiative recombinaation out the front
-        [E, blackbody_photocurrent] = blackbody(volt, E1, E2, stack)   # E is in J whereas eVs is in J. Also, the array E is made with finer resolution than eVs, which is given as the AM1.5G resolution.
-        EQE = np.interp(E, q*eVs_original, EQE)  # equal to absorptance if not diffusion or SRV limited
-        front_flux = trapz(EQE*blackbody_photocurrent, E)  # photocurrent (s^-1 m^-2 eV^-1) 
+        absorptance = np.interp(E, q*eVs_original, absorptance)  # equal to absorptance if not diffusion or SRV limited
+        front_flux = trapz(absorptance*scaled_blackbody_photocurrent, E)  # photocurrent (s^-1 m^-2 eV^-1) 
         #
-        # Special case: limited qcceptance qngles, ie angular selective filters
+        # Special case: limited acceptance angles, ie angular selective filters
         if stack.acceptance_angle != np.pi/2:
             thetas = np.linspace(0, stack.acceptance_angle, 100)
-            front_flux = 2*trapz(np.cos(thetas)*np.sin(thetas), thetas)*trapz(EQE*blackbody_photocurrent, E) # *2 because taking ratio of solid angle to hemisphere solid angle, and projected solid angle of hemisphere is 1/2
+            front_flux = 2*trapz(np.cos(thetas)*np.sin(thetas), thetas)*trapz(absorptance*scaled_blackbody_photocurrent, E) # *2 because taking ratio of solid angle to hemisphere solid angle, and projected solid angle of hemisphere is 1/2
                                     # assumes absorptance/EQE is angle independent
                 # Limited acceptance angles and maximum concentration possible X linked by 
                 # X_max = Sin[theta]^2/Sin[4.65*^-3]^2 = 46250*Sin[theta]^2
         
-        # radiative recombinaation out the front
-        if np.any(stack.rear_reflectance<1):  # Emittance to backmirror        
+        # radiative recombinaation out the rear
+        if np.any(stack.rear_reflectance<1):  
             nr = np.interp(E, q*eVs_original, nr)
-            rear_QE = np.interp(E, q*eVs_original, rear_QE)
-            spectral_back_flux =  nr**2*rear_QE*blackbody_photocurrent
+            rear_emittance = np.interp(E, q*eVs_original, rear_emittance)  # equal to absorptance if not diffusion or SRV limited
+            spectral_back_flux =  nr**2*rear_emittance*scaled_blackbody_photocurrent
             back_flux = trapz(spectral_back_flux, E)     
         else: back_flux = 0 
 
@@ -542,9 +569,10 @@ class photon_recycling:
             nr = photocollection.nr 
             absorptance, rear_emittance, alpha, alpha_FCA, Rf_int, Rf_ext = (
                 photocollection.absorptance, photocollection.rear_emittance, photocollection.alpha, photocollection.alpha_FCA, photocollection.Rf_int, photocollection.Rf_ext)
-            E1_pr = max(eVs[np.where(alpha>0)[0][0]], volt+.005)
+            E1_pr = max(eVs[np.where(alpha>1e-16)[0][0]], volt+.005)
+            E1_pr = max(eVs[np.where(alpha>1e-16)[0][0]], eVs[0])
             E2_pr = 2*stack.bandgap + .5
-            [E, blackbody_photocurrent] = blackbody(volt, E1_pr, E2_pr, stack)#n=5e3  # alpha has resolution at 2000
+            [E, blackbody_photocurrent] = blackbody(E1_pr, E2_pr, stack)#n=5e3  # alpha has resolution at 2000
 
             spectral_radiative_coefficient = 4*(g*1e-4)/(carriers.ni_eff**2)*nr**2*(q*eVs)**2*alpha*np.exp(-q*eVs/(k*T))  # (cm^3/s/eV) 1e-4 to go um to cm   # 4 for all directions (sphere surface area = 4*circle)
             stack.spectral_B = spectral_radiative_coefficient
@@ -559,7 +587,7 @@ class photon_recycling:
             rear_emittance = np.interp(E, q*eVs, rear_emittance)  
             alpha_total = alpha + alpha_FCA + 1e-60
  
-            internal_emission = 4*nr**2*alpha*blackbody_photocurrent            
+            internal_emission = 4*nr**2*alpha*blackbody_photocurrent*(np.exp((q*volt)/(k*stack.T_cell)))  # the voltage or QFLS term will get divided out            
             Pesc_front_E = 1/4*((1-Rf_int)/(1-Rf_ext))/(alpha_total*stack.thickness)*absorptance   # probability of escaping out the front   
             Pesc_rear_E = 1/4*1/(alpha_total*stack.thickness)*rear_emittance
             
