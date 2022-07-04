@@ -2,6 +2,7 @@
 This module defines some useful objects and also does some boring clerical tasks for the detailed-balance calculations.
 """
 
+
 import numpy as np
 import time
 import matplotlib.pyplot as plt
@@ -42,7 +43,7 @@ class Stack:
     Stack initiated by function manage_results"""
 
     def __init__(self, T_cell, T_sun, spectrum, concentration, structure, composition,
-                  V_test, fc_rec_ratio, nonradiative_recombination_modeling, diffusion_limited, lifetimes, bulk_lifetimes, trap_lifetimes, 
+                  V_test, find_Voc, fc_rec_ratio, nonradiative_recombination_modeling, diffusion_limited, lifetimes, bulk_lifetimes, trap_lifetimes, 
                   SRVs, thicknesses, dopant_type, dopant_density, 
                   texturing, front_reflectance, rear_reflectance, 
                   acceptance_angle, MEG, max_yield, energy_threshold_normalized, 
@@ -54,6 +55,9 @@ class Stack:
         self.structure = structure
         self.composition = composition
         self.V_test = V_test
+        if V_test == 'Voc':
+            find_Voc = 'Yes'
+        self.find_Voc = find_Voc
         self.fc_rec_ratio = fc_rec_ratio
         self.nonradiative_recombination_modeling = nonradiative_recombination_modeling
         self.diffusion_limited = diffusion_limited
@@ -257,22 +261,23 @@ def display_results(start_time, optimal_efficiency, optimal_bandgaps, file_name,
               + str(optimal_bandgaps[0:stack.number_of_bandgaps]) + ' eV.\n')
     # Give computation time.
     stop_time = time.time()
-    print('More are given in file '+file_name+'. The calculations took')
     times = stop_time - start_time
-    if times > 3600:
-        print(str(round(times/3600, 3))+' hours.\n')
-    if times > 60:
-        print(str(round(times/60, 3))+' minutes.\n')
-    else:
-        print(str(round(times, 3))+' seconds.\n')
-    return True    
+    def time_string():
+        if times > 3600:
+            return str(round(times/3600, 3))+' hours.\n'
+        elif times > 60:
+            return str(round(times/60, 3))+' minutes.\n'
+        else:
+            return str(round(times, 3))+' seconds.\n'
+    print('More are given in file '+file_name+'. The calculations took ' + time_string())
 
+    return True    
 
 
 
 def manage_input_output(
         file_name, T_cell, T_sun, spectrum, concentration, 
-                   structure, composition, V_test, fc_rec_ratio, nonradiative_recombination_modeling, diffusion_limited, lifetimes, 
+                   structure, composition, V_test, find_Voc, fc_rec_ratio, nonradiative_recombination_modeling, diffusion_limited, lifetimes, 
                    bulk_lifetimes, trap_lifetimes, SRVs, thicknesses, dopant_type, 
                    dopant_density, texturing, front_reflectance, rear_reflectance, acceptance_angle, 
                    MEG, max_yield, threshold_energy_normalized, sampling_range, bandgap_resolution, anything_variable):  
@@ -284,7 +289,7 @@ def manage_input_output(
     
     # Wrap up inputs into variables "stack" and "sampled_bandgaps."
     stack = Stack(T_cell, T_sun, spectrum, concentration, structure, composition,
-                  V_test, fc_rec_ratio, nonradiative_recombination_modeling, diffusion_limited, lifetimes, bulk_lifetimes, trap_lifetimes, 
+                  V_test, find_Voc, fc_rec_ratio, nonradiative_recombination_modeling, diffusion_limited, lifetimes, bulk_lifetimes, trap_lifetimes, 
                   SRVs, thicknesses, dopant_type, dopant_density, 
                   texturing, front_reflectance, rear_reflectance, acceptance_angle, MEG, max_yield, 
                   threshold_energy_normalized, sampling_range, anything_variable)
