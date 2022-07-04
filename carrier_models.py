@@ -39,6 +39,8 @@ def find_ni(T, stack):
             ni = 5.29e19*(T/300)**2.54*np.exp(-6726/T)
             # From Misiakos's "Accurate measurements of the silicon intrinsic carrier density from 78 to 340 K". 
             # Use Sproul instead from previous code version?:
+    if stack.composition[stack.layer_num] == 'generic':
+        ni = 1.79e6  
     return ni
 
 
@@ -143,7 +145,10 @@ class Carriers:
         self.Nd = Nd
         no = Nd/2 + np.sqrt((Nd/2)**2 + ni_eff**2)  # b/c Charge nuetrality
         po = ni_eff**2/no
-        dn = ( - no + np.sqrt(no**2 + 4*(ni_eff**2*np.exp(q*volt/(k*stack.T_cell)))) )/2        # because nopo = ni^2, so np = ni^2e^(qV/kT)   = (no+dn)(0+dn)    # then use quadratic formula
+        dn = ( -(no+po) + np.sqrt((no+po)**2 - 4*(no*po - ni_eff**2*np.exp(q*volt/(k*stack.T_cell)))) )/2    
+        if dn == 0:
+            dn =  (ni_eff**2*np.exp(q*volt/(k*stack.T_cell)) - no*po)/(po+no)  # useful when numbers slide under the machine precision
+
         self.dn = dn
         if stack.dopant_type == 'n':  # save data
             self.n0 = no
@@ -266,7 +271,7 @@ class Mobility:  # (cm^2 V^-1 s^-1)
             mobility_h = 30  # https://books.google.com/books?id=YhCQDwAAQBAJ&pg=PA21&lpg=PA21&dq=cigs+hole+mobility&source=bl&ots=Va2kX3Op-s&sig=ACfU3U0yc_QXlNpbx5bzTsMzF533890u6Q&hl=en&sa=X&ved=2ahUKEwjd88PS4ejpAhVKIDQIHWwbBmc4ChDoATACegQIChAB#v=onepage&q=cigs%20hole%20mobility&f=false
     
         if stack.composition[stack.layer_num] == ('CdTe'):   # These are thin film values, single crystal values are higher
-            mobility_e = 10  # https://pdf.sciencedirectassets.com/280687/1-s2.0-S2211379719X00029/1-s2.0-S2211379719308757/main.pdf?X-Amz-Security-Token=IQoJb3JpZ2luX2VjENL%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJHMEUCIG6pKBI6zF%2BEy27veoIVIk5qRoimnXVB%2B2q4%2FRruch%2B%2BAiEA3HYiTOJBaL54wYr0ydX%2BM6k4MScKHu2haxs0AZSE1PUqtAMISxADGgwwNTkwMDM1NDY4NjUiDAZDoPQifSuuCwHg3CqRA8ZpncdXkoc%2BNn6YIfCTrB9p8Q%2FL%2BQga17ePsmdfwuFJa4I%2FJ%2BM%2FfsXDXSHAEMUTZoNLajZN8gH%2FYBQvlZfxpKwGtC3siyvR7Fk25jb2MWpidXhqHLLt%2BVKAlmrMkQlh1JpafRclCqFWbLAN3m97VzHkBPA6%2FAaDYMeHWBRNZuuQvN41doBbmMCXsE1J0r%2F1%2FT8UrvuBG7MGtjzJPqoaYwpqIuD4z8kRURh4DLVnez1o19U3IIqRbFmukoRPdGMGkfRf3anEySFjQgS69XflHyrXVmdc%2FAuP01X4c7ahuteadCm4Z5s2ZpO6WyiF5mMpjyQnyHAgseFf1oRG6129shAFYKgZNehsbKcyCNyeLYkFCLVyM%2BNusg%2F7%2FjLMZH7zweI0DS%2FLT5YNd8NkyEmBWv4UCASCzKpk9AxB6bX5jdO78yjsWalEuqOZF%2Bii6uuiuNmrgP1DyiPE4vnQX9d2uf6RNVqy7hrHr54OJytXXXA%2Fe2yMf2%2BObbU%2FsqdMInlnR7fjh91d%2BZeb%2Fe3eVzBtZfejMPXhifcFOusBCrIEeaLMrQv6n1NOL4tTJt50dauNeRnfnPrXzRD74%2BsUe6PZVA7TTkEEroiMjyaDALgI4sKIKryr5Dgy%2FQbLd0o%2Fbi2tZAwI8tV5nM54y3oMvHntRr6A%2BTWYk12UkzgKEq7qRDDoJF3oqQzUcbg1sRtljLTrd%2F02wcDjD%2BrDsTtF55yydCTTIZjg4jeB1EbqKbyDlNA6T1y4K5ImwX1nmZ326HqMmu3q7hMHa74SqIXpTkyscQwpWNGgN1qlULrbNR8KchX3k4pKJUfFQSfhjkBEGK8BBD%2FUv7bEVeCHIeJ3eHC%2BxUnshWO6yA%3D%3D&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20200611T190219Z&X-Amz-SignedHeaders=host&X-Amz-Expires=300&X-Amz-Credential=ASIAQ3PHCVTY3VQ7VWMU%2F20200611%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Signature=ff740b40d2aa7555aa1ea52d90e1b649d75d83154d013015068aac26414d1dd7&hash=7d65e74f14ac6c7951693eb93e8b979ac6af13a3879425d8ddf2e82774ea9b97&host=68042c943591013ac2b2430a89b270f6af2c76d8dfd086a07176afe7c76c2c61&pii=S2211379719308757&tid=spdf-93fff349-7805-4238-bf37-b83c9abc2e2e&sid=0ee4cbcc88c20542d858f9c76319dd518ef9gxrqa&type=client
+            mobility_e = 1  # https://pdf.sciencedirectassets.com/280687/1-s2.0-S2211379719X00029/1-s2.0-S2211379719308757/main.pdf?X-Amz-Security-Token=IQoJb3JpZ2luX2VjENL%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJHMEUCIG6pKBI6zF%2BEy27veoIVIk5qRoimnXVB%2B2q4%2FRruch%2B%2BAiEA3HYiTOJBaL54wYr0ydX%2BM6k4MScKHu2haxs0AZSE1PUqtAMISxADGgwwNTkwMDM1NDY4NjUiDAZDoPQifSuuCwHg3CqRA8ZpncdXkoc%2BNn6YIfCTrB9p8Q%2FL%2BQga17ePsmdfwuFJa4I%2FJ%2BM%2FfsXDXSHAEMUTZoNLajZN8gH%2FYBQvlZfxpKwGtC3siyvR7Fk25jb2MWpidXhqHLLt%2BVKAlmrMkQlh1JpafRclCqFWbLAN3m97VzHkBPA6%2FAaDYMeHWBRNZuuQvN41doBbmMCXsE1J0r%2F1%2FT8UrvuBG7MGtjzJPqoaYwpqIuD4z8kRURh4DLVnez1o19U3IIqRbFmukoRPdGMGkfRf3anEySFjQgS69XflHyrXVmdc%2FAuP01X4c7ahuteadCm4Z5s2ZpO6WyiF5mMpjyQnyHAgseFf1oRG6129shAFYKgZNehsbKcyCNyeLYkFCLVyM%2BNusg%2F7%2FjLMZH7zweI0DS%2FLT5YNd8NkyEmBWv4UCASCzKpk9AxB6bX5jdO78yjsWalEuqOZF%2Bii6uuiuNmrgP1DyiPE4vnQX9d2uf6RNVqy7hrHr54OJytXXXA%2Fe2yMf2%2BObbU%2FsqdMInlnR7fjh91d%2BZeb%2Fe3eVzBtZfejMPXhifcFOusBCrIEeaLMrQv6n1NOL4tTJt50dauNeRnfnPrXzRD74%2BsUe6PZVA7TTkEEroiMjyaDALgI4sKIKryr5Dgy%2FQbLd0o%2Fbi2tZAwI8tV5nM54y3oMvHntRr6A%2BTWYk12UkzgKEq7qRDDoJF3oqQzUcbg1sRtljLTrd%2F02wcDjD%2BrDsTtF55yydCTTIZjg4jeB1EbqKbyDlNA6T1y4K5ImwX1nmZ326HqMmu3q7hMHa74SqIXpTkyscQwpWNGgN1qlULrbNR8KchX3k4pKJUfFQSfhjkBEGK8BBD%2FUv7bEVeCHIeJ3eHC%2BxUnshWO6yA%3D%3D&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20200611T190219Z&X-Amz-SignedHeaders=host&X-Amz-Expires=300&X-Amz-Credential=ASIAQ3PHCVTY3VQ7VWMU%2F20200611%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Signature=ff740b40d2aa7555aa1ea52d90e1b649d75d83154d013015068aac26414d1dd7&hash=7d65e74f14ac6c7951693eb93e8b979ac6af13a3879425d8ddf2e82774ea9b97&host=68042c943591013ac2b2430a89b270f6af2c76d8dfd086a07176afe7c76c2c61&pii=S2211379719308757&tid=spdf-93fff349-7805-4238-bf37-b83c9abc2e2e&sid=0ee4cbcc88c20542d858f9c76319dd518ef9gxrqa&type=client
             mobility_h = 1  # https://aip-scitation-org.ezproxy1.lib.asu.edu/doi/pdf/10.1063/1.4891846
             # Glockler has mu_e = 320, mu_h = 40 in "Setting the Baseline"
             # perpindicular mobility is what matters and will be higher https://www.osti.gov/pages/servlets/purl/1371645
@@ -297,6 +302,14 @@ class Mobility:  # (cm^2 V^-1 s^-1)
             if mobility == 'bad':
                 mobility_h = 10 - 5/4*(math.log(Nh, 10) - math.log(10**16, 10))
                 mobility_e = 60 - 50/3.5*(math.log(Ne, 10) - math.log(10**15, 10))
+
+        if stack.composition[stack.layer_num] == ('generic'):
+            mobility_e = stack.anything_variable
+            mobility_h = stack.anything_variable
+        
+        # if stack.composition[stack.layer_num] == 'CdTe' or stack.composition[stack.layer_num] == 'perovskite triple cation':   # Here, uncommenting allows to set the mobility of polycyrstalline materials. Set this number in run.py
+        #     mobility_e = stack.anything_variable[1]
+        #     mobility_h = stack.anything_variable[1]
         self.mobility_e = mobility_e
         self.mobility_h = mobility_h
 
@@ -311,13 +324,6 @@ def find_diffusivity(carriers, stack): # returns D from Einstein's relation (in 
     diffusivity = k*stack.T_cell/q*mobility
     return diffusivity
         
-            
-def base_resistivity(carriers, stack):
-    """ Calculate base resistance as a function of carrier concentration in the base. 
-    This calculation needed to incorporate the benefits of doping the base. 
-    Outputs resistance in ohms*cm."""
-    
-    mob = Mobility(carriers, stack)
-    return (q*(carriers.n*mob.mobility_e + carriers.p*mob.mobility_h))**-1  # ohms*cm
+
 
 
