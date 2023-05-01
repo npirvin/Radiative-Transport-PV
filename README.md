@@ -12,7 +12,7 @@ Many parameters can be turned off but still need a placeholder. For example, if 
 This was written on python 3.10. The code also uses standard python libraries, such as numpy. 
 These libraries are availible by installing the python distribution Anaconda.
 
-Warning: This code originally targeted general detailed balance efficiencies before being changed to focusing on 
+Note: This code originally targeted general detailed balance efficiencies before being changed to focusing on 
     feedback between transport and radiation. As such, the multijunction features and the multi-exciton generation (MEG) 
     may not be compatible with the new drift-diffsion model. Using the calculations for multijunctions or MEG 
     may conflict with more recent parts of the code, and thus need reverification before use.
